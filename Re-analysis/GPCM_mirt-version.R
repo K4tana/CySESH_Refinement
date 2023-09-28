@@ -74,7 +74,27 @@ itemjudge
 
 #To do: Decide where we want to go in terms of theta sensitivity: Do we want fatter tails in the short measure? Then we can integrate an item that has flat IIF with two others that have clear peaks at midrange. If we want less sensitivity in the extremes, we can have three in midrange etc. Defining the desired target distribution of TIF is paramount here. 
 
-#DIF
-#cut down dataframe to fit the command
-difdat <- rdata[,c(items,4)]
-fit_dif <- multipleGroup(difdat, model = 1, group = "gender", method = "MHRM")
+#Differential item functioning (DIF)
+#cut down dataframe to fit the command: remove low represented gender options to make the models identifiable.
+rdata <- rdata[-which(rdata$gender=="Non-binary / third gender"),]
+rdata <- rdata[-which(rdata$gender=="Prefer not to say"),]
+
+#build the two groups model. I assume that items with a similar factor loading (from previous estimation) have no invariance between men and women. There is no theoretical reason for gender difference anchors.
+dif_gen <- multipleGroup(rdata[items], model = 1, 
+                         group = rdata$gender, 
+                         method = "MHRM",
+                         invariance = c("cy_sesh_help1", "free_means", "free_variance"),
+                         itemtype = "gpcm")
+
+#look at the coefficients of interest
+coef(dif_gen)
+mirt::
+#apply dif checks
+DIF(dif_gen, 
+    which.par = c("a1"), 
+    seq_stat = "BIC",
+    plotdif = T, 
+    simplify = T,
+    verbose = T)
+
+#does not detect DIF in items. this may be to the fact that all reference Items have DIF or gender was not really a DIF variable. find a variable in data set that does not show variance and use it as reference.
