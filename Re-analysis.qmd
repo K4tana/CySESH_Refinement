@@ -1,0 +1,437 @@
+---
+title: "CySESH Shortening Project [1]"
+author: "Oliver D. Reithmaier"
+editor: source
+tbl-cap-location: top
+format:
+  html:
+    embed-resources: true
+    df-print: default
+    grid: 
+      body-width: 4100px
+      sidebar-width: 100px
+      margin-width: 0px
+    toc: true
+    code-annotations: below
+---
+# CySESH Shortening Project
+
+This project is done to further enhance the CySESH Scale (Borgert et al., 2023). Validated short scales have advantages in terms of efficiency and participant retention, while also providing more opportunities for researchers, as they - for example - allow researchers to use them in experience sampling designs. This project is focused on three objectives: 
+
+1. Shortening the CySESH scale to a lower length according to empirical criteria. A preferrable option would be between 3 and 5 items. This is done via a combination of CTT and IRT analyses. The shorter scale then will be validated in a subsequent sample.
+2. Explore the cultural sensitivity of CySESH by sampling from different cultural backgrounds and testing for measurement invariance. 
+3. Exploring demographic aspects that arose in the initial publication of CySESH. 
+
+## Step 1: IRT Reanalysis of Data from Borgert et al. (2023)
+
+The first step is the re-analysis of data from Borgert et al. (2023) in an IRT centered approach. This helps establishing items that are apt for a short scale. We will first test different IRT models against each other to confirm the best suited ones for analysis. For this, we use the `mirt`package (Chalmers, 2012), which is a comprehensive toolkit for almost all known and most used IRT models. Additionally, we use tidyverse notation (Wickham et al., 2019) and the ggmirt package for visualizations (Masur, 2023). The latter can only be installed from github (not on CRAN) as follows: 
+```{r}
+#| echo: false
+load("wrksp.RData")
+```
+
+```{{r}}
+devtools::install_github("pkmasur/ggmirt")
+```
+
+After installing all necessary packages, we load them and set a seed.
+
+```{r}
+#| output: false
+pkg <- c("mirt", "tidyverse","ggmirt")
+for (i in pkg){
+  library(i, character.only = T)
+}
+set.seed(1337)
+```
+
+First things first, we load the processed data of Borgert et al. (2023) and process it further to accomodate our use case.
+
+```{r}
+#| output: false
+#load processed data
+rdata <- read_csv("Re-analysis/data_processed.csv")
+
+#specify items of interest
+items <- c(8:19)
+
+# cut down data
+rdata <- rdata[-which(rdata$gender=="Non-binary / third gender"),] # <1>
+rdata <- rdata[-which(rdata$gender=="Prefer not to say"),]         # <1>
+```
+1. Cut out the lower represented gender options to make the models identifyable for DIF analyses.
+
+## Basic Descriptives: Score differences in CySESH.
+
+```{r}
+gen_tab <- rdata |> group_by(gender) |> summarise(avg=mean(cy_sesh_score),n=n())
+gen_tab
+edu_tab <- rdata |> group_by(education) |> summarise(avg=mean(cy_sesh_score),n=n())
+edu_tab
+emp_tab <- rdata |> group_by(employment) |> summarise(avg=mean(cy_sesh_score), n=n())
+emp_tab
+```
+Description: 
+
+- Gender: Males are underrepresented and show a slightly higher average Score. This has been discussed. 
+- Education: Primary School is an outlier, else is about stable in the 4-4.2 average. 
+- Employment: Retirees have way lower CySESH scores that the average. Everyone else is at about 4-4.2. This is expected.
+
+It seems as though the more work (in terms of IT equipment) exposure people have, the higher their CySESH score seems to get. 
+
+## Model Fitting and Analysis
+We then fit three types of nested models with the `mirt()`function. This has been done beforehand, as running each model takes about half an hour. We use ML estimation via the Metropolis-Hastings approach coupled with a Robbins-Monro root finding algorithm. The following code was used:
+
+```{{r}}
+#fit unidimensional gpcm 
+fit_g <- mirt(rdata[items], model=1, itemtype = "gpcmIRT", method="MHRM", verbose = T)
+
+#fit graded rating scale model (Muraki type)
+fit_r <- mirt(rdata[items], model=1, itemtype = "grsm", method="MHRM", verbose = T)
+
+#fit a gpcmIRT model for comparison (slightly different parameterization than gpcm)
+fit_gi <- mirt(rdata[items], model = 1, itemtype = "gpcmIRT", method = "MHRM", verbose = T)
+```
+
+Let's firstly see which models fit best. We use AIC and BIC as criteria here, since p-value generation does not really work well with these types of models. 
+
+```{r}
+mirt::anova(fit_r,fit_g,fit_gi)
+```
+
+According to BIC and AIC, the Rating Scale Model fits best to the data. So we will focus on the analysis of said model first. An additional analysis of the GPCM model (fit_g) is given later. 
+
+# RSM Analysis
+
+First, we look at the model summary and save it as a data frame for later.
+```{r}
+smr_r <- summary(fit_r) |> as.data.frame()
+```
+F1 represents the factor loadings for each item, h2 represents the communality, i.e. how much of the item's variance is explained by the latent factor. 
+
+Next, we look at parameters in our model. Note that a rating scale model assumes ordered items from bad to good, in a sense. again, we save it as a data frame for later
+```{r}
+ice_r <- coef(fit_r, simplify =T)|> as.data.frame()
+ice_r
+```
+b parameters represent the thresholds at which a person is about as likely to choose one or the next-lower option. a represents the discrimination parameter (higher means, it can distinguish thetas better). c is the guessing parameter for each item. Parameters are the same for each item in the RSM. 
+
+Next we assess model fit of the RSM. This has been calculated beforehand, as covergence takes some time. The following code was used: 
+
+```{{r}}
+modfit_r <- M2(fit_r, type = "C2", calcNull = F)
+modfit_r
+```
+
+```{r}
+modfit_r
+```
+Values of model fit are in acceptable ranges. Note that this is the standard RMSEA, NOT the $RMSEA_2$, as proposed by Maydeu-Olivares & Joe (2014) for IRT Models. M2 statistic (similar function as $\chi^2$) is significant, meaning that it would reject the model. However, M2 does not work properly for large models like ours (also stated in Maydeu-Olivares & Joe (2014)). 
+
+To follow-up, we assess item fit. This is done with the ´itemfit()´command.
+
+```{r}
+itf_r <- itemfit(fit_r)
+itf_r
+```
+this computes the S_X2 statistic, which should not become significant for items in order to signify good fit. This will be discussed later on.
+
+Finally, Let's look at a plot for the whole model in terms of total scores in relation to theta. 
+```{r}
+plot(fit_r)
+```
+
+**Infit and Outfit**
+
+Items usually are looked at in terms of infit and outfit statistics. In general, it is preferable to look at infit, which should be close to 1, and ideally less than 1. To visualize this for all items, we additionally use the `itemfitplot()` function from `ggmirt`.
+
+```{r}
+#| warning: false
+#| error: false
+infi_r <- itemfit(fit_r, fit_stats = "infit") |> as.data.frame()
+infi_r
+itemfitPlot(fit_r)
+```
+As one can see from these data, our items seem to be fine in regard to infit. 
+
+**Person Fit**
+
+To calculate whether the persons fit the model, we use person fit statistics. We calculate proportions of infit and outfit in persons using z-scores. Higher non-fitting rates than 5% are considered worrying. 
+
+```{r}
+personfit(fit_r) |> 
+  reframe(infit.outside = prop.table(table(z.infit > 1.96 | z.infit < -1.96)),
+          outfit.outside = prop.table(table(z.outfit>1.96 | z.outfit < -1.96)))
+```
+The bottom row represents non-fitting people. As we can see, we have about 4x the acceptable amount of people not fitting to the model. This is a worrying amount and may explain the somewhat bad-ish fit values. 
+
+To further investigate this, we can plot the factor scores. 
+
+```{r}
+fscores(fit_r) |> as.data.frame() |> ggplot(aes(F1))+geom_density(bw=0.5)
+```
+This is a smoothed kernel density plot of estimated factor scores of all persons in the data set. As we can see, extreme ends are fatter than would be expected with normal distributed ends. 
+
+Let's look at an un-smoothed version of this. 
+```{r}
+fscores(fit_r) |> density() |> plot()
+```
+The plot clearly shows outliers at the extreme ends in both directions. The question remains whether this was a sampling problem or a modeling issue - this can only be solved by further sampling. 
+
+**Graphic Item Analysis**
+
+Item analysis is done graphically and numerically with a final table. This is done to assess item quality for scale reduction. First, lets look at option characteristic curves (OCCs) for each item. 
+
+```{r}
+#Option characteristic curves 
+itemplot(fit_r, item = 1)  
+itemplot(fit_r, item = 2)  
+itemplot(fit_r, item = 3)  
+itemplot(fit_r, item = 4)  
+itemplot(fit_r, item = 5)  
+itemplot(fit_r, item = 6)  
+itemplot(fit_r, item = 7)  
+itemplot(fit_r, item = 8)  
+itemplot(fit_r, item = 9)  
+itemplot(fit_r, item = 10)  
+itemplot(fit_r, item = 11) 
+itemplot(fit_r, item = 12) 
+```
+In the figures we can see a probability density function for each answer option (1 to 7) within an item. Ideally, the mid-option peaks around a theta of zero and the other peaks are not overshadowed by other function curves. My interpretation of item aptitude for the short scale is the following:
+
+1. ok
+2. bad: skewed to negative theta
+3. bad: skewed to negative theta
+4. bad: skewed to positive theta.
+5. ok, but lower difficulty.
+6. ok, but more problematic, low discrimination on the upper end.
+7. really good
+8. bad: probability of extreme ends is higher than category before (overshadowing extremes).
+9. bad: skewed to positive theta.
+10. bad: overshadowing extremes.
+11. bad: skewed to negative theta.
+12. bad: skewed to negative theta + overshadowing extremes.
+
+Additionally, we can plot the item information function for each item. 
+
+```{r}
+itemInfoPlot(fit_r, facet = T)
+```
+According to these plots, items we should not consider for selection are 12,2,6 and 8 (provide low information). Worth considering would be items 11,1,3,5,7 and 9. Note that this is not a final call, item statistics have a say here as well. To look at these again, we construct a final data frame with the most important statistics. 
+
+```{r}
+itemjudge <- data.frame(
+  item = row.names(ice_r),
+  communality = round(smr_r$h2, digits = 2),
+  p.S_x2 = round(itf_r$p.S_X2, digits = 2),
+  discr=round(ice_r$items.a1, digits = 2),
+  infit= round(infi_r$infit, digits = 2)
+)
+itemjudge
+```
+This in conjunction with the item information plots and the OCCs should be used to select possible candidate items for a short scale. 
+
+**Test Information**
+
+Finally, a test information plot is made to show at which regions of theta the test can discriminate well. 
+
+```{r}
+testInfoPlot(fit_r, adj_factor = 2)
+```
+
+Test information shows high discrimination in a large theta range, with low standard error and a rather steep drop-off. This is a good thing for tests to have in general. 
+
+**Differential Item Functioning (DIF)**
+
+To test for this, we fit a multiple group object with `mirt` that is split by gender.
+
+```{{r}}
+dif_gen_r <- multipleGroup(rdata[items], model = 1, 
+                         group = rdata$gender, 
+                         method = "MHRM",
+                         invariance = c("cy_sesh_help1", "free_means", "free_variance"),
+                         itemtype = "grsm")
+dif_r <- DIF(dif_gen_r, 
+    which.par = c("a1"), 
+    seq_stat = "BIC",
+    plotdif = T, 
+    simplify = T,
+    verbose = T)
+```
+
+Then the object is tested for differential item functioning with the `DIF()` command.This also takes some time. 
+
+```{r}
+dif_r
+```
+
+# GPCM Analysis
+
+**Notes on GPCM**
+This model is a generalization of the PCM (or RSM, those are identical models) in a similar manner than a 2-PL model is a generalization of the SML (or Rasch) Model. It includes a discrimination parameter and individually computes threshold parameters for the item answer options for each item (unlike the RSM, which computes one threshold parameter estimate for each option (every item has the same parameters). The GPCM is missing the (for Rasch hardliners) "crucial" assumption (!) of specific objectivity, which states that every logit difference between two persons per item is independent of measurement device and that every logit difference between items per person is independent of measurement device. I would think most psychologists would have the notion that this is completely bonkers to assume just from common psychological sense and I would agree. While our RSM fits better, we will still look at GPCM results as they can tell us a lot about underlying data structure and discrimination of items. Selecting items that ideally are best in both models will surely aid the future model. Note that our performance metrics are askew as we have a lot of items, and many models are not used to that large amount of items. We will copy the result structure from our RSM analysis part. 
+
+First, we look at the model summary and save it as a data frame for later.
+```{r}
+#| echo: false
+smr <- summary(fit_g) |> as.data.frame()
+smr
+```
+F1 represents the factor loadings for each item, h2 represents the communality, i.e. how much of the item's variance is explained by the latent factor. 
+
+Applying common standards in the field, items 12,6, and 10 would be excluded due to factor loadings < 0.3 and very low communalities (<0.1). The best items in terms of FL and communalities (top 3) would be 7,5 and 9.
+
+Next, we look at parameters in our model. Note that a rating scale model assumes ordered items from bad to good, in a sense. again, we save it as a data frame for later
+```{r}
+ice <- coef(fit_g, simplify =T)|> as.data.frame()
+ice
+```
+a parameters represent item discriminination. b parameters represent the thresholds at which a person is about as likely to choose one or the next-lower option.
+
+To make sense, an item should show ordered thresholds. Items that do not show this might have problems with equidistance or wording. We can see that the items that do not show order are 2,6,9,10,11 and 12. Items 1,3,4,5,7 and 8 would remain. 
+
+Next we assess model fit of the RSM. This has been calculated beforehand, as covergence takes some time. The following code was used: 
+
+```{{r}}
+modfit <- M2(fit_g, type = "C2", calcNull = F)
+```
+
+```{r}
+modfit
+```
+Values of model fit are significantly worse than the RSM, except for SRMSR, which seems to be better. Note that this is the standard RMSEA, NOT the $RMSEA_2$, as proposed by Maydeu-Olivares & Joe (2014) for IRT Models. M2 statistic (similar function as $\chi^2$) is significant, meaning that it would reject the model. However, M2 does not work properly for large models like ours (also stated in Maydeu-Olivares & Joe (2014)). 
+
+To follow-up, we assess item fit. This is done with the ´itemfit()´command.
+
+```{r}
+itf <- itemfit(fit_g)
+itf
+```
+this computes the S_X2 statistic, which should not become significant for items in order to signify good fit. This will be discussed later on.
+
+Finally, Let's look at a plot for the whole model in terms of total scores in relation to theta. 
+```{r}
+plot(fit_g)
+```
+The expected total score does not change in comparison to the RSM much. It is noteworthy that our maximum test points would be 84, half of which would be 44. Our theta zero is slightly above average. 
+
+**Infit and Outfit**
+
+Items usually are looked at in terms of infit and outfit statistics. In general, it is preferable to look at infit, which should be close to 1, and ideally less than 1. To visualize this for all items, we additionally use the `itemfitplot()` function from `ggmirt`.
+
+```{r}
+#| warning: false
+#| error: false
+infi <- itemfit(fit_g, fit_stats = "infit") |> as.data.frame()
+infi
+itemfitPlot(fit_g)
+```
+As one can see from these data, our items seem to be better in regard to infit than the RSM values (lower beyond 1). Still nothing problematic in both camps. 
+
+**Person Fit**
+
+To calculate whether the persons fit the model, we use person fit statistics. We calculate proportions of infit and outfit in persons using z-scores. Higher non-fitting rates than 5% are considered worrying. 
+
+```{r}
+personfit(fit_g) |> 
+  reframe(infit.outside = prop.table(table(z.infit > 1.96 | z.infit < -1.96)),
+          outfit.outside = prop.table(table(z.outfit>1.96 | z.outfit < -1.96)))
+```
+This shows similar patterns as the RSM model, albeit slightly higher non-fitting person ratios (second row) than the RSM, which might explain the worse model-data fit. 
+
+To further investigate this, we can plot the factor scores. 
+
+```{r}
+fscores(fit_g) |> as.data.frame() |> ggplot(aes(F1))+geom_density(bw=0.5)
+```
+This is a smoothed kernel density plot of estimated factor scores of all persons in the data set. As we can see, extreme ends are fatter than would be expected with gaussian extremes. 
+
+Let's look at an un-smoothed version of this. 
+```{r}
+fscores(fit_g) |> density() |> plot()
+```
+The plot clearly shows outliers at the extreme ends in both directions. The question remains whether this was a sampling problem or a modeling issue - this can only be solved by further sampling. 
+
+**Graphic Item Analysis**
+
+Item analysis is done graphically and numerically with a final table. This is done to assess item quality for scale reduction. First, lets look at option characteristic curves (OCCs) for each item. 
+
+```{r}
+#Option characteristic curves 
+itemplot(fit_g, item = 1)  
+itemplot(fit_g, item = 2)  
+itemplot(fit_g, item = 3)  
+itemplot(fit_g, item = 4)  
+itemplot(fit_g, item = 5)  
+itemplot(fit_g, item = 6)  
+itemplot(fit_g, item = 7)  
+itemplot(fit_g, item = 8)  
+itemplot(fit_g, item = 9)  
+itemplot(fit_g, item = 10)  
+itemplot(fit_g, item = 11) 
+itemplot(fit_g, item = 12) 
+```
+In the figures we can see a probability density function for each answer option (1 to 7) within an item. Ideally, the mid-option peaks around a theta of zero and the other peaks are not overshadowed by other function curves. My interpretation of item aptitude for the short scale is the following:
+
+1. bad: probability of extreme ends is higher than category before (overshadowing extremes).
+2. bad: skewed to negative theta and probability of extreme ends is higher than category before (overshadowing extremes).
+3. bad: skewed to negative theta and probability of extreme ends is higher than category before (overshadowing extremes).
+4. bad: skewed to positive theta and probability of extreme ends is higher than category before (overshadowing extremes).
+5. bad: probability of extreme ends is higher than category before (overshadowing extremes).
+6. bad: probability of extreme ends is higher than category before (overshadowing extremes).
+7. ok, rather clear-ish separation, albeit positive ends discriminate worse. 
+8. bad: probability of extreme ends is higher than category before (overshadowing extremes).
+9. bad: skewed to positive theta and probability of extreme ends is higher than category before (overshadowing extremes).
+10. bad: overshadowing extremes and extremely bad item discrimination. 
+11. bad: extremely bad item discrimination.
+12. bad: extremely bad item discrimination. 
+
+Additionally, we can plot the item information function for each item. 
+
+```{r}
+itemInfoPlot(fit_g, facet = T)
+```
+According to these plots, items we should not consider for selection are 12,10,4,5 and 8 (provide low information or are skewed too hard). Worth considering would be items 11,2,3,5,7 and 9. Note that this is not a final call, item statistics have a say here as well. To look at these again, we construct a final data frame with the most important statistics. 
+
+```{r}
+itemjudge2 <- data.frame(
+  item = row.names(ice),
+  communality = round(smr$h2, digits = 2),
+  p.S_x2 = round(itf$p.S_X2, digits = 2),
+  discr=round(ice$items.a1, digits = 2),
+  infit= round(infi$infit, digits = 2)
+)
+itemjudge2
+```
+This in conjunction with the item information plots and the OCCs should be used to select possible candidate items for a short scale. 
+
+**Test Information**
+
+Finally, a test information plot is made to show at which regions of theta the test can discriminate well. 
+
+```{r}
+testInfoPlot(fit_g, adj_factor = 2)
+```
+
+Test information shows high discrimination in a large theta range, with low standard error and a rather steep drop-off. This is a good thing for tests to have in general. 
+
+**Differential Item Functioning (DIF)**
+
+To test for this, we fit a multiple group object with `mirt` that is split by gender.Then the object is tested for differential item functioning with the `DIF()` command. This also takes some time. 
+
+```{{r}}
+dif_gen <- multipleGroup(rdata[items], model = 1, 
+                         group = rdata$gender, 
+                         method = "MHRM",
+                         invariance = c("cy_sesh_help1", "free_means", "free_variance"),
+                         itemtype = "gpcm")
+dif <- DIF(dif_gen, 
+    which.par = c("a1"), 
+    seq_stat = "BIC",
+    plotdif = T, 
+    simplify = T,
+    verbose = T)
+```
+
+```{r}
+dif
+```

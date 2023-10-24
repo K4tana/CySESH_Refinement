@@ -5,7 +5,7 @@
 #devtools::install_github("pkmasur/ggmirt")
 
 #Required packages
-pkg <- c("mirt", "tidyverse","ggmirt")
+pkg <- c("mirt", "tidyverse","ggmirt", "patchwork")
 for (i in pkg){
   library(i, character.only = T)
 }
@@ -13,6 +13,16 @@ set.seed(1337)
 #gpcm
 #load processed data directly from the github repository of Borgert et al. (2023)
 rdata <- read_csv("Re-analysis/data_processed.csv")
+
+#further look at response variable properties. for this, we create boxplots for every item and full cysesh scores. 
+boxplots <- rdata[items] |> pivot_longer(cols = 1:12, names_to = "Item", values_to = "Value") |> ggplot(aes(x=Item, y=Value))+geom_boxplot(notch = T)+stat_summary(fun=mean, geom = "point", shape=20,size=4,color="red")+theme(legend.position = "none")
+
+hist_full_score <- rdata|> ggplot(aes(x=cy_sesh_score))+geom_histogram()
+
+box_full_score <- ggplot(rdata, aes(y=cy_sesh_score, x=""))+geom_boxplot(notch = T, outlier.color = "red", outlier.shape = 1)+stat_summary(fun=mean, geom = "point", shape=20,size=4,color="red")+theme(legend.position = "none")
+
+#looking at CYSESH scores by different demographic variables. cut out primary school, too few data for a meaningful boxplot.
+rdata[-which(rdata$education=="Primary School"),c("cy_sesh_score", "education")] |> ggplot(aes(y=cy_sesh_score, x="", fill = education))+geom_boxplot(notch = T, outlier.colour = "red")
 
 #specify items
 items <- c(8:19)
