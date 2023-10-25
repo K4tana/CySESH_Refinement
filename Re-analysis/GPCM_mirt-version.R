@@ -13,7 +13,10 @@ set.seed(1337)
 #gpcm
 #load processed data directly from the github repository of Borgert et al. (2023)
 rdata <- read_csv("Re-analysis/data_processed.csv")
-
+if(interactive()) mirtCluster()
+#specify items
+items <- c(8:19)
+dem <- c("education", "employment", "gender", "age")
 #further look at response variable properties. for this, we create boxplots for every item and full cysesh scores. 
 boxplots <- rdata[items] |> pivot_longer(cols = 1:12, names_to = "Item", values_to = "Value") |> ggplot(aes(x=Item, y=Value))+geom_boxplot(notch = T)+stat_summary(fun=mean, geom = "point", shape=20,size=4,color="red")+theme(legend.position = "none")
 
@@ -24,8 +27,8 @@ box_full_score <- ggplot(rdata, aes(y=cy_sesh_score, x=""))+geom_boxplot(notch =
 #looking at CYSESH scores by different demographic variables. cut out primary school, too few data for a meaningful boxplot.
 rdata[-which(rdata$education=="Primary School"),c("cy_sesh_score", "education")] |> ggplot(aes(y=cy_sesh_score, x="", fill = education))+geom_boxplot(notch = T, outlier.colour = "red")
 
-#specify items
-items <- c(8:19)
+#age and score. this regression line is fake. should be much closer to parallel, as we saw in our total demographics regression...its missing other factors. 
+rdata[which(rdata$age>17),] |> ggplot(aes(x=age, y=cy_sesh_score))+geom_point()+geom_smooth(method = "lm", fill=NA)
 
 #cut down dataframe to fit the model: remove low represented gender options to make the models identifiable.
 rdata <- rdata[-which(rdata$gender=="Non-binary / third gender"),]
@@ -140,6 +143,27 @@ personfit(fit_r) |>
 fscores(fit_r) |> as.data.frame() |> ggplot(aes(F1))+geom_density(bw=0.5) #smoothed density of factor scores for people. We have fat tails. This means, to refine the scale to a normal distribution, we need more difficult items that are less sensitive at extremes as those kill our scope. at least I assume that to be true. Also the plot shows a slightly heavier tail on the negative side. Might be a sample problem (outliers with low SE).
 fscores(fit_r) |> density() |> plot() # un-smoothed KD shows that the main bulk of factor scores is in the desired range. a few extreme end outliers can be seen at extreme ends, hightening the bandwidth. This might be a good thing, as it shows we are even able to detect those!
 
+#construct table with high or low theta scores and see what that constitutes
+unfit_top <- rdata[which(fscores(fit_r)>2),]
+unfit_bot <- rdata[which(fscores(fit_r)< -2),]
+
+#now lets follow up on the person fit stats: plot and show descriptives of that data. 
+unfit_top |> ggplot(aes(y=cy_sesh_score, x="", fill = education))+geom_boxplot(notch = T, outlier.colour = "red")
+
+unfit_bot |> ggplot(aes(y=cy_sesh_score, x="", fill = education))+geom_boxplot(notch = T, outlier.colour = "red") 
+
+#look at item parameters for these subsamples
+
+psych::describe(unfit_bot[items])
+psych::describe(unfit_top[items])
+unfit_bot$age |> hist()
+unfit_top$age |> hist()
+
+unfit_bot |> ggplot(aes(x=education))+geom_bar()
+unfit_top |> ggplot(aes(x=education))+geom_bar()
+#i see what this is. Overestimation of abilities and underestimation respectively kicking in.
+
+
 #Option characteristic curves for items. Flagged = bad.
 itemplot(fit_r, item = 1)  #ok
 itemplot(fit_r, item = 2)  #flagged: skewed to negative theta
@@ -183,8 +207,10 @@ dif_gen_r <- multipleGroup(rdata[items], model = 1,
 #To do: Decide where we want to go in terms of theta sensitivity: Do we want fatter tails in the short measure? Then we can integrate an item that has flat IIF with two others that have clear peaks at midrange. If we want less sensitivity in the extremes, we can have three in midrange etc. Defining the desired target distribution of TIF is paramount here. 
 
 DIF(dif_gen_r, 
-    which.par = c("a1"), 
-    seq_stat = "BIC",
-    plotdif = T, 
-    simplify = T,
-    verbose = T)
+    which.par = c("a1","b3","b4"), SE=TRUE)
+
+#sensitivity analysis in terms of outliers. train the same model for data without the outliers and see where that goes (removing fat tails)
+r2data <- anti_join(rdata,unfit_dat, by="id")
+fit_r2 <- mirt(r2data[items], model=1, itemtype = "grsm", method="MHRM", verbose = T)
+summary(fit_r2)
+modfit_r2 <- M2(fit_r2, type = "C2", calcNull = F)
