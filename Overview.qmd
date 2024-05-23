@@ -1,0 +1,117 @@
+---
+title: "Overview: CySESH IRT Reanalysis"
+author: "Oliver D. Reithmaier"
+editor: source
+tbl-cap-location: top
+format:
+  html:
+    embed-resources: true
+    df-print: kable
+    grid: 
+      body-width: 4100px
+      sidebar-width: 100px
+      margin-width: 0px
+    toc: true
+    code-annotations: below
+---
+# CySESH Shortening Project
+
+This project is done to further enhance the CySESH Scale (Borgert et al., 2023). Validated short scales have advantages in terms of efficiency and participant retention, while also providing more opportunities for researchers, as they - for example - allow researchers to use them in experience sampling designs. This project is focused on three objectives: 
+
+1. Shortening the CySESH scale to a lower length according to empirical criteria. A preferrable option would be between 3 and 5 items. This is done via a combination of CTT and IRT analyses. The shorter scale then will be validated in a subsequent sample.
+2. Explore the cultural sensitivity of CySESH by sampling from different cultural backgrounds and testing for measurement invariance. 
+3. Exploring demographic aspects that arose in the initial publication of CySESH. 
+
+```{r}
+#| output: false
+load("wrksp.RData")
+pkg <- c("mirt", "tidyverse","ggmirt", "patchwork")
+for (i in pkg){
+  library(i, character.only = T)
+}
+set.seed(1337)
+```
+
+## Overview over different decision criteria
+
+### Model decision
+
+Model choice so far was a graded rating scale model (mirt: GRSM) based on fit indices (AIC/BIC)
+
+
+### Item decision
+
+#### Distributions of Answers
+```{r}
+rdata[,c(items,which(colnames(rdata)=="id"))] |> pivot_longer(cols = colnames(rdata[,c(items,which(colnames(rdata)=="id"))][1:12]), names_to = "Item", values_to = "Value") |> ggplot()+aes(x=Value)+geom_bar()+facet_wrap(~Item)
+
+```
+
+#### Different Fit Statistics
+```{r}
+itemjudge
+```
+S_X2 statistic should not become significant for items in order to signify good fit. Infit should be less than, but close to 1. Discrimination signifies the strength to tell apart people with differing ability. Higher than 1 is good. Communality is the variance of the item explained by the latent factor. 
+
+#### Option characteristic curves (OCCs)
+::: {layout-ncol=3 .column-page}
+
+```{r}
+itemplot(fit_r, item = 1)  
+```
+```{r}
+itemplot(fit_r, item = 2)  
+```
+```{r}
+itemplot(fit_r, item = 3) 
+```
+```{r}
+itemplot(fit_r, item = 4) 
+```
+```{r}
+itemplot(fit_r, item = 5)  
+```
+```{r}
+itemplot(fit_r, item = 6) 
+```
+```{r}
+itemplot(fit_r, item = 7)  
+```
+```{r}
+itemplot(fit_r, item = 8)  
+```
+```{r}
+itemplot(fit_r, item = 9)
+```
+```{r}
+itemplot(fit_r, item = 10) 
+```
+```{r}
+itemplot(fit_r, item = 11)
+```
+```{r}
+itemplot(fit_r, item = 12)
+```
+
+:::
+In the figures we can see a probability density function for each answer option (1 to 7) within an item. Ideally, the mid-option peaks around a theta of zero and the other peaks are not overshadowed by other function curves. My interpretation of item aptitude for the short scale is the following:
+
+1. ok
+2. bad: skewed to negative theta
+3. bad: skewed to negative theta
+4. bad: skewed to positive theta.
+5. ok, but lower difficulty.
+6. ok, but more problematic, low discrimination on the upper end.
+7. really good
+8. bad: probability of extreme ends is higher than category before (overshadowing extremes).
+9. bad: skewed to positive theta.
+10. bad: overshadowing extremes.
+11. bad: skewed to negative theta.
+12. bad: skewed to negative theta + overshadowing extremes.
+
+#### Item Information Plots
+```{r}
+itemInfoPlot(fit_r, facet = T)
+```
+
+According to these plots, items we should not consider for selection are 12,2,6 and 8 (provide low information). Worth considering would be items 11,1,3,5,7 and 9. Note that this is not a final call, item statistics have a say here as well. To look at these again, we construct a final data frame with the most important statistics. 

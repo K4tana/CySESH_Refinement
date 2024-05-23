@@ -6,7 +6,7 @@ tbl-cap-location: top
 format:
   html:
     embed-resources: true
-    df-print: default
+    df-print: kable
     grid: 
       body-width: 4100px
       sidebar-width: 100px
@@ -99,7 +99,9 @@ Let's firstly see which models fit best. We use AIC and BIC as criteria here, si
 mirt::anova(fit_r,fit_g,fit_gi)
 ```
 
-According to BIC and AIC, the Rating Scale Model fits best to the data. So we will focus on the analysis of said model first. An additional analysis of the GPCM model (fit_g) is given later. 
+According to BIC and AIC, the graded Rating Scale Model (grsm; Muraki, 1992) fits best to the data. So we will focus on the analysis of said model first. An additional analysis of the Generalized PCM model (gpcm; Muraki, 1992) is given later. 
+
+Additionally, a graded response model (Samejima, 1969) and a Rating scale model (Andrich, 1978) were tested. These, however, fit even worse than the other two models, so they were discarded. I used `mirt()`for this as well, (see code for model fit above) but changed the itemtype parameter to "graded" and "rsm", respectively.
 
 # RSM Analysis
 
@@ -114,7 +116,14 @@ Next, we look at parameters in our model. Note that a rating scale model assumes
 ice_r <- coef(fit_r, simplify =T)|> as.data.frame()
 ice_r
 ```
-b parameters represent the thresholds at which a person is about as likely to choose one or the next-lower option. a represents the discrimination parameter (higher means, it can distinguish thetas better). c is the guessing parameter for each item. Parameters are the same for each item in the RSM. 
+b parameters represent the theta thresholds at which a person is about as likely to choose one or the next-lower option. a represents the discrimination parameter (higher means, it can distinguish thetas better). c is the guessing parameter for each item. Parameters are the same for each item in the RSM. Unfortunately, our threshold order got reversed here. This is a known phenomenon sometimes referred to as "negative deltas" (cf. Adams et al., 2012; Wetzel & Carstensen, 2014), the explanation of which is hard to specifically pin-point in our case. According to Adams et al.(2012), possible explanations in our case could be variation in discrimination parameters of adjacent categories or low frequencies of certain answer categories.
+
+Looking at Item Histograms, we do have rather low counts in the first answer category: 
+
+```{r}
+rdata[,c(items,which(colnames(rdata)=="id"))] |> pivot_longer(cols = colnames(rdata[,c(items,which(colnames(rdata)=="id"))][1:12]), names_to = "Item", values_to = "Value") |> ggplot()+aes(x=Value)+geom_bar()+facet_wrap(~Item)
+```
+We also have somewhat differing discrimination parameters between the patterns items and overall high-ish discrimination variance from 1.3 to 2.4. These items therefore must be looked at closely. 
 
 Next we assess model fit of the RSM. This has been calculated beforehand, as covergence takes some time. The following code was used: 
 
@@ -177,6 +186,33 @@ Let's look at an un-smoothed version of this.
 fscores(fit_r) |> density() |> plot()
 ```
 The plot clearly shows outliers at the extreme ends in both directions. The question remains whether this was a sampling problem or a modeling issue - this can only be solved by further sampling. 
+
+To investigate further, we look at the specific people with factor scores higher or lower than |2| (high or low thetas), extract them and group them into data frames. 
+```{r}
+#construct dfs with high or low theta scores 
+unfit_top <- rdata[which(fscores(fit_r)>2),]
+unfit_bot <- rdata[which(fscores(fit_r)< -2),]
+```
+Then we boxplot the CySESH scores of these and look at demographic influence for funsies. 
+```{r}
+#plot and show scores of that data by education. 
+unfit_top |> ggplot(aes(y=cy_sesh_score, x="", fill = education))+geom_boxplot(notch = T, outlier.colour = "red")
+
+unfit_bot |> ggplot(aes(y=cy_sesh_score, x="", fill = education))+geom_boxplot(notch = T, outlier.colour = "red") 
+
+unfit_bot |> ggplot(aes(x=education))+geom_bar() + labs(title = "Low scorer education")
+unfit_top |> ggplot(aes(x=education))+geom_bar() + labs(title = "High scorer education")
+```
+Bottom and Top scorer's CySESH values range between the lowest or highest two options, respectively. Variability does not really correlate well with education level for both scenarios. Bottom scorers show low variability in data, which suggests higher confidence in own ability estimates (i.e. being terrible with smart home security). Bar plots indicate that low scorers consist of more highly educated individuals, while high scorers show higher proportions of lesser educated participants. This is expected from an ability overestimation/underestimation viewpoint, a phenomenon previously described in literature (Kim et al., 2016)
+
+Now let's see whether age is associated with this. 
+```{r}
+unfit_bot$age |> hist()
+unfit_top$age |> hist()
+```
+Top scorers are rather young while low scorers don't show any clear relationship. This is expected since many younger people have more experience growing up with digital tech and smart homes in general. Technology exposure/use is known to increase better security knowledge (Lee & Chua, 2023) and therefore seems likely to influence self-efficacy statements as well, as those variables seem to be linked (De Kimpe et al., 2022). 
+
+I would suggest a sensitivity analysis with outliers removed in the next round of sampling to see whether this influence biases results, and to which degree. 
 
 **Graphic Item Analysis**
 
@@ -242,6 +278,22 @@ testInfoPlot(fit_r, adj_factor = 2)
 Test information shows high discrimination in a large theta range, with low standard error and a rather steep drop-off. This is a good thing for tests to have in general. 
 
 **Differential Item Functioning (DIF)**
+Looking at differences between genders (remember: we found a significant gender effect), I box-plotted the answers: 
+```{r}
+#preparing data
+rdata[,c(items, which(colnames(rdata)=="gender"))] |> 
+  pivot_longer(cols = colnames(rdata[items]), values_to = "Value", names_to = "Item") |> 
+#plotting
+  ggplot()+
+  aes(y=Item,x=Value, fill=gender)+ 
+  geom_boxplot()+ 
+  theme(panel.grid.major = element_blank(),
+        panel.background = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.line = element_line(colour = "black"))
+```
+
+As we can see, Understanding1, threats5, and communication3 show large differences in variance and means. This could be an indicator as to why the coefficients were reordered.However, items policies1, connecting1 seem rather invariant to gender. 
 
 To test for this, we fit a multiple group object with `mirt` that is split by gender.
 
@@ -249,11 +301,10 @@ To test for this, we fit a multiple group object with `mirt` that is split by ge
 dif_gen_r <- multipleGroup(rdata[items], model = 1, 
                          group = rdata$gender, 
                          method = "MHRM",
-                         invariance = c("cy_sesh_help1", "free_means", "free_variance"),
+                         invariance = c("cy_sesh_policies1", "cy_sesh_connecting1", "free_means", "free_variance"),
                          itemtype = "grsm")
 dif_r <- DIF(dif_gen_r, 
-    which.par = c("a1"), 
-    seq_stat = "BIC",
+    which.par = c("a1", "c"),
     plotdif = T, 
     simplify = T,
     verbose = T)
@@ -262,8 +313,10 @@ dif_r <- DIF(dif_gen_r,
 Then the object is tested for differential item functioning with the `DIF()` command.This also takes some time. 
 
 ```{r}
-dif_r
+dif_grsm
 ```
+
+We did not detect DIF in items between men and women. 
 
 # GPCM Analysis
 
@@ -274,7 +327,6 @@ First, we look at the model summary and save it as a data frame for later.
 ```{r}
 #| echo: false
 smr <- summary(fit_g) |> as.data.frame()
-smr
 ```
 F1 represents the factor loadings for each item, h2 represents the communality, i.e. how much of the item's variance is explained by the latent factor. 
 
@@ -289,7 +341,7 @@ a parameters represent item discriminination. b parameters represent the thresho
 
 To make sense, an item should show ordered thresholds. Items that do not show this might have problems with equidistance or wording. We can see that the items that do not show order are 2,6,9,10,11 and 12. Items 1,3,4,5,7 and 8 would remain. 
 
-Next we assess model fit of the RSM. This has been calculated beforehand, as covergence takes some time. The following code was used: 
+Next we assess model fit of the GPCM. This has been calculated beforehand, as covergence takes some time. The following code was used: 
 
 ```{{r}}
 modfit <- M2(fit_g, type = "C2", calcNull = F)
@@ -306,7 +358,7 @@ To follow-up, we assess item fit. This is done with the ´itemfit()´command.
 itf <- itemfit(fit_g)
 itf
 ```
-this computes the S_X2 statistic, which should not become significant for items in order to signify good fit. This will be discussed later on.
+this computes the S~X2~ statistic, which should not become significant for items in order to signify good fit. This will be discussed later on.
 
 Finally, Let's look at a plot for the whole model in terms of total scores in relation to theta. 
 ```{r}
@@ -419,13 +471,15 @@ Test information shows high discrimination in a large theta range, with low stan
 To test for this, we fit a multiple group object with `mirt` that is split by gender.Then the object is tested for differential item functioning with the `DIF()` command. This also takes some time. 
 
 ```{{r}}
-dif_gen <- multipleGroup(rdata[items], model = 1, 
-                         group = rdata$gender, 
+dif_gen <- multipleGroup(xdata[2:13], model = 1, 
+                         group = xdata$gender, 
                          method = "MHRM",
-                         invariance = c("cy_sesh_help1", "free_means", "free_variance"),
+                         invariance = c("cy_sesh_policies1", "cy_sesh_connecting1", "free_means", "free_variance"),
                          itemtype = "gpcm")
 dif <- DIF(dif_gen, 
-    which.par = c("a1"), 
+    which.par = c("a1", "c"), 
+    scheme = "add",
+    Wald = T,
     seq_stat = "BIC",
     plotdif = T, 
     simplify = T,

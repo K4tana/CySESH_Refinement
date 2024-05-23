@@ -10,13 +10,15 @@ for (i in pkg){
   library(i, character.only = T)
 }
 set.seed(1337)
-#gpcm
+#pre-processing
 #load processed data directly from the github repository of Borgert et al. (2023)
 rdata <- read_csv("Re-analysis/data_processed.csv")
 if(interactive()) mirtCluster()
 #specify items
 items <- c(8:19)
 dem <- c("education", "employment", "gender", "age")
+
+
 #further look at response variable properties. for this, we create boxplots for every item and full cysesh scores. 
 boxplots <- rdata[items] |> pivot_longer(cols = 1:12, names_to = "Item", values_to = "Value") |> ggplot(aes(x=Item, y=Value))+geom_boxplot(notch = T)+stat_summary(fun=mean, geom = "point", shape=20,size=4,color="red")+theme(legend.position = "none")
 
@@ -198,19 +200,37 @@ itemjudge
 #this would eliminate items 5,7 and 8 from significant p.S_x2.NOT SURE IF THIS IS OK TO USE THOUGH...measure was developed for dichotomous IRT models. best discrimination is seen in items 1,5,7,9,11. Highest communality in items 7,9,11,1,5
 
 # DIF
-dif_gen_r <- multipleGroup(rdata[items], model = 1, 
-                         group = rdata$gender, 
-                         method = "MHRM",
-                         invariance = c("cy_sesh_help1", "free_means", "free_variance"),
-                         itemtype = "grsm")
+xdata <- rdata |> select(c(gender, colnames(rdata[items]))) |> filter(gender=="Male"|gender=="Female")
+dif_gen_r2 <- multipleGroup(xdata[2:13], model = 1,
+                            group = xdata$gender,
+                            method = "MHRM",
+                            invariance = c("cy_sesh_policies1", "cy_sesh_connecting1", "free_means", "free_variance"),
+                            itemtype = "grsm")
 
 #To do: Decide where we want to go in terms of theta sensitivity: Do we want fatter tails in the short measure? Then we can integrate an item that has flat IIF with two others that have clear peaks at midrange. If we want less sensitivity in the extremes, we can have three in midrange etc. Defining the desired target distribution of TIF is paramount here. 
 
-DIF(dif_gen_r, 
-    which.par = c("a1","b3","b4"), SE=TRUE)
+dif_grsm <- DIF(dif_gen_r2, 
+    which.par = c("a1", "c"),
+    scheme = "add",
+    plotdif = T, 
+    simplify = T,
+    verbose = T)
 
 #sensitivity analysis in terms of outliers. train the same model for data without the outliers and see where that goes (removing fat tails)
 r2data <- anti_join(rdata,unfit_dat, by="id")
 fit_r2 <- mirt(r2data[items], model=1, itemtype = "grsm", method="MHRM", verbose = T)
 summary(fit_r2)
-modfit_r2 <- M2(fit_r2, type = "C2", calcNull = F)
+modfit_r2 <- M2(fit_r2, type = "C2", calcNull = F) #a tad better. 
+
+#lets try some new models, shall we. use the "graded" and "rsm" models in a more rasch-y fashion.
+
+fit_grad <- mirt(rdata[items], model=1, itemtype = "graded", method="MHRM", verbose = T)
+fit_rsm <- mirt(rdata[items], model=1, itemtype = "rsm", method="MHRM", verbose = T)
+modfit_grad <- M2(fit_grad, type = "C2", calcNull = F) #worse in RMSEA, better in SRMSR, though.
+modfit_rsm <- M2(fit_rsm, type = "C2", calcNull = F)  #terrible modfit in all aspects, discard.
+
+apatheme <- theme(panel.grid.major = element_blank(), 
+      panel.background = element_blank(), 
+      panel.grid.minor = element_blank(),
+      axis.line = element_line(colour = "black"))
+
